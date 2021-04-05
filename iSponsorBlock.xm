@@ -17,6 +17,9 @@ NSString *modifiedTimeString;
 -(void)singleVideo:(id)arg1 currentVideoTimeDidChange:(YTSingleVideoTime *)arg2 {
     %orig;
     id overlayView = self.view.overlayView;
+    if(!self.channelID) {
+        self.channelID = @"";
+    }
     if(self.skipSegments.count > 0 && [overlayView isKindOfClass:%c(YTMainAppVideoPlayerOverlayView)] && ![kWhitelistedChannels containsObject:self.channelID]){
         if(kShowModifiedTime){
             UILabel *durationLabel = self.view.overlayView.playerBar.durationLabel;
@@ -30,7 +33,6 @@ NSString *modifiedTimeString;
         }
         else if (self.unskippedSegment != self.currentSponsorSegment-1) {
             sponsorSegment = self.skipSegments[self.currentSponsorSegment-1];
-
         }
         
         if((lroundf(arg2.time) == ceil(sponsorSegment.startTime) && arg2.time >= sponsorSegment.startTime) || (lroundf(arg2.time) >= ceil(sponsorSegment.startTime) && arg2.time < sponsorSegment.endTime)) {
@@ -66,7 +68,7 @@ NSString *modifiedTimeString;
                 [self.hud hideAnimated:YES afterDelay:kSkipNoticeDuration];
             }
                                                                                                          
-            if(self.currentSponsorSegment <= self.skipSegments.count-1) self.currentSponsorSegment ++;
+            if(self.currentSponsorSegment <= self.skipSegments.count-1 && [[kCategorySettings objectForKey:sponsorSegment.category] intValue] != 3) self.currentSponsorSegment ++;
         }
         else if(lroundf(arg2.time) > sponsorSegment.startTime && self.currentSponsorSegment != self.skipSegments.count && self.currentSponsorSegment != self.skipSegments.count-1) {
             self.currentSponsorSegment ++;
@@ -74,7 +76,7 @@ NSString *modifiedTimeString;
         else if(self.currentSponsorSegment == 0 && self.unskippedSegment != -1) {
             self.currentSponsorSegment ++;
         }
-        else if(self.currentSponsorSegment > 0 && lroundf(arg2.time) < self.skipSegments[self.currentSponsorSegment-1].endTime) {
+        else if(self.currentSponsorSegment > 0 && lroundf(arg2.time) < self.skipSegments[self.currentSponsorSegment-1].endTime - self.MDXActive /*<-- what this does is subtract 1 from the endTime if screencasting to eliminate a skip loop and leave it the same if its not casting*/) {
             if(self.unskippedSegment != self.currentSponsorSegment-1) {
                 self.currentSponsorSegment --;
             }
@@ -96,7 +98,9 @@ NSString *modifiedTimeString;
 }
 -(void)playbackController:(id)arg1 didActivateVideo:(id)arg2 withPlaybackData:(id)arg3{
     %orig;
-    if(!self.isPlayingAd){
+    if(!self.isPlayingAd && [self.view.overlayView isKindOfClass:%c(YTMainAppVideoPlayerOverlayView)]){
+        [MBProgressHUD hideHUDForView:self.view animated:YES]; //fix manual skip popup not disappearing when changing videos
+
         self.skipSegments = [NSMutableArray array];
         self.userSkipSegments = [NSMutableArray array];
         [SponsorBlockRequest getSponsorTimes:self.currentVideoID completionTarget:self completionSelector:@selector(setSkipSegments:)];
@@ -157,9 +161,24 @@ NSString *modifiedTimeString;
 }
 %new
 -(void)manuallySkipSegment:(UIButton *)sender {
-    [self scrubToTime:self.skipSegments[self.currentSponsorSegment-1].endTime];
-    if(kEnableSkipCountTracking) [SponsorBlockRequest viewedVideoSponsorTime:self.skipSegments[self.currentSponsorSegment-1]];
+    SponsorSegment *sponsorSegment = [[SponsorSegment alloc] initWithStartTime:-1 endTime:-1 category:nil UUID:nil];
+    if(self.currentSponsorSegment <= self.skipSegments.count-1){
+        sponsorSegment = self.skipSegments[self.currentSponsorSegment];
+    }
+    else if (self.unskippedSegment != self.currentSponsorSegment-1) {
+        sponsorSegment = self.skipSegments[self.currentSponsorSegment-1];
+    }
+    
+    if(sponsorSegment.endTime > self.currentVideoTotalMediaTime) {
+        [self scrubToTime:self.currentVideoTotalMediaTime];
+        if(kEnableSkipCountTracking) [SponsorBlockRequest viewedVideoSponsorTime:sponsorSegment];
+    }
+    else {
+        [self scrubToTime:sponsorSegment.endTime];
+        if(kEnableSkipCountTracking) [SponsorBlockRequest viewedVideoSponsorTime:sponsorSegment];
+    }
     [MBProgressHUD hideHUDForView:self.view animated:YES];
+    self.currentSponsorSegment++;
 }
 %end
 
@@ -355,6 +374,16 @@ NSString *modifiedTimeString;
         else if ([self respondsToSelector:@selector(createAndAddMarker:type:clusterType:width:)]){
             [self createAndAddMarker:startTime type:type clusterType:0 width:markerWidth];
         }
+        else if ([self respondsToSelector:@selector(addMarkerViewToClosestSegmentView:)]) {
+            YTPlayerBarSegmentMarkerView *markerView = [[%c(YTPlayerBarSegmentMarkerView) alloc] init];
+            markerView.startTime = startTime;
+            markerView.endTime = endTime;
+            markerView.width = markerWidth;
+            markerView.type = type;
+            NSMutableArray *markerViews = [self valueForKey:@"_markerViews"];
+            [markerViews addObject:markerView];
+            [self addMarkerViewToClosestSegmentView:markerView];
+        }
         else {
             return;
         }
@@ -407,7 +436,7 @@ NSString *modifiedTimeString;
 %hook YTNGWatchLayerViewController
 -(void)didCompleteFullscreenDismissAnimation {
     %orig;
-    if(!self.playerViewController.isPlayingAd && self.playerViewController.view.overlayView.controlsOverlayView.isDisplayingSponsorBlockViewController){
+    if(!self.playerViewController.isPlayingAd && self.playerViewController.view.overlayView.controlsOverlayView.isDisplayingSponsorBlockViewController && [self.playerViewController.view.overlayView isKindOfClass:%c(YTMainAppVideoPlayerOverlayView)]) {
         [self.playerViewController.view.overlayView.controlsOverlayView presentSponsorBlockViewController];
     }
 }
