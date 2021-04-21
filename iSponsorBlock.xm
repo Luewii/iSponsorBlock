@@ -76,8 +76,11 @@ NSString *modifiedTimeString;
         else if(self.currentSponsorSegment == 0 && self.unskippedSegment != -1) {
             self.currentSponsorSegment ++;
         }
-        else if(self.currentSponsorSegment > 0 && lroundf(arg2.time) < self.skipSegments[self.currentSponsorSegment-1].endTime - self.MDXActive /*<-- what this does is subtract 1 from the endTime if screencasting to eliminate a skip loop and leave it the same if its not casting*/) {
-            if(self.unskippedSegment != self.currentSponsorSegment-1) {
+        else if(self.currentSponsorSegment > 0 && lroundf(arg2.time) < self.skipSegments[self.currentSponsorSegment-1].endTime) {
+            if(self.MDXActive) {
+        
+            }
+            else if(self.unskippedSegment != self.currentSponsorSegment-1) {
                 self.currentSponsorSegment --;
             }
             else if(arg2.time < self.skipSegments[self.currentSponsorSegment-1].startTime-0.01) {
@@ -230,11 +233,18 @@ NSString *modifiedTimeString;
         self.sponsorStartedEndedButton.imageView.hidden = YES;
         return;
     }
-    self.sponsorBlockButton.hidden = ![[self valueForKey:@"_isOverlayVisible"] boolValue];
-    self.sponsorStartedEndedButton.hidden = ![[self valueForKey:@"_isOverlayVisible"] boolValue];
+    BOOL overlayVisible;
+    if([self respondsToSelector:@selector(isOverlayVisible)]) {
+        overlayVisible = self.overlayVisible;
+    }
+    else {
+        overlayVisible = [[self valueForKey:@"_isOverlayVisible"] boolValue];
+    }
+    self.sponsorBlockButton.hidden = !overlayVisible;
+    self.sponsorStartedEndedButton.hidden = !overlayVisible;
     
-    self.sponsorBlockButton.imageView.hidden = ![[self valueForKey:@"_isOverlayVisible"] boolValue];
-    self.sponsorStartedEndedButton.imageView.hidden = ![[self valueForKey:@"_isOverlayVisible"] boolValue];
+    self.sponsorBlockButton.imageView.hidden = !overlayVisible;
+    self.sponsorStartedEndedButton.imageView.hidden = !overlayVisible;
     %orig;
 }
 
